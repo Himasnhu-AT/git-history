@@ -1,6 +1,8 @@
-use git2::{DiffOptions, Repository};
+use git2::{DiffOptions, Error, Repository};
 use regex::Regex;
 use serde::Serialize;
+use serde_json::{json, Value};
+use std::env;
 use std::fmt;
 use std::fs;
 use std::path::Path;
@@ -56,9 +58,19 @@ impl From<serde_json::Error> for CustomError {
 }
 
 fn main() -> Result<(), CustomError> {
-    // Replace with the path to your repository
-    let repo_path = Path::new("../tos/");
-    let repo = Repository::open(repo_path)?;
+    // Capture command-line arguments
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 3 || args[1] != "index" {
+        eprintln!("Usage: cargo run --release index <path_to_repo>");
+        return Ok(());
+    }
+
+    let repo_path = &args[2];
+    git_index(repo_path)
+}
+
+fn git_index(repo_path: &str) -> Result<(), CustomError> {
+    let repo = Repository::open(Path::new(repo_path))?;
 
     // Get the HEAD commit
     let head = repo.head()?;

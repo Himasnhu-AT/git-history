@@ -28,5 +28,5 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/git-history:${{ steps.cargo.outputs.version }} -f dockerfile.public .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/git-history:${{ steps.cargo.outputs.version }} -f dockerfile .
           docker push ${{ secrets.DOCKER_USERNAME }}/git-history:${{ steps.cargo.outputs.version }}

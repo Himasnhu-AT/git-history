@@ -60,16 +60,25 @@ curl -X POST -H "Content-Type: application/json" -d '{"repo": "github.com/himans
 Build and run the Docker image:
 
 ```bash
-docker build -t git-history .
-docker run -p 8080:8080 git-history
+docker compose up -d
 ```
 
 ### Use Pre-built Docker Image
 
 Alternatively, use the pre-built Docker image from Docker Hub:
 
-```bash
-docker run -p 8080:8080 himanshu806/git-history
+Create a `docker-compose.yml` file:
+
+```dockercompose
+services:
+  backend:
+    image: himanshu806/git-history:0.1.0
+    # build:
+    #   context: .
+    #   dockerfile: dockerfile
+    ports:
+      - 8080:8080
+    command: cargo run --release server
 ```
 
 ## JSON Structure

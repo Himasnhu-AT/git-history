@@ -1,11 +1,15 @@
-use git2::{DiffOptions, Error, Repository};
+use git2::{DiffOptions, Repository};
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use regex::Regex;
 use serde::Serialize;
-use serde_json::{json, Value};
+use std::convert::Infallible;
 use std::env;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
+use tempfile::tempdir;
 
 #[derive(Serialize)]
 struct CommitDiff {
@@ -22,11 +26,13 @@ struct CommitHistory {
     git_diff: Vec<CommitDiff>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum CustomError {
     GitError(git2::Error),
     JsonError(serde_json::Error),
     IoError(std::io::Error),
+    MissingFieldError(String),
 }
 
 impl fmt::Display for CustomError {
@@ -35,6 +41,7 @@ impl fmt::Display for CustomError {
             CustomError::GitError(err) => write!(f, "Git error: {}", err),
             CustomError::JsonError(err) => write!(f, "JSON error: {}", err),
             CustomError::IoError(err) => write!(f, "IO error: {}", err),
+            CustomError::MissingFieldError(field) => write!(f, "Missing field in JSON: {}", field),
         }
     }
 }
@@ -57,19 +64,129 @@ impl From<serde_json::Error> for CustomError {
     }
 }
 
-fn main() -> Result<(), CustomError> {
+#[tokio::main]
+async fn main() -> Result<(), CustomError> {
     // Capture command-line arguments
     let args: Vec<String> = env::args().collect();
-    if args.len() != 3 || args[1] != "index" {
-        eprintln!("Usage: cargo run --release index <path_to_repo>");
+
+    if args.len() < 2 {
+        eprintln!("\n\n         Git History \nUsage: cargo run --release [COMMAND] <args> \nIndex Code: cargo run --release index <path_to_repo> \nRun Server: cargo run --release server\n");
         return Ok(());
     }
 
-    let repo_path = &args[2];
-    git_index(repo_path)
+    match args[1].as_str() {
+        "index" => {
+            if args.len() != 3 {
+                eprintln!("Usage: cargo run --release index <path_to_repo>");
+                return Ok(());
+            }
+            let repo_path = &args[2];
+            let json_data = git_index(repo_path)?;
+            fs::write(
+                Path::new(".").join("commit_history.json"),
+                json_data,
+            )
+            .map_err(|e| {
+                eprintln!("Failed to write commit history to file: {}", e);
+                CustomError::IoError(e)
+            })?;
+            println!("Commit history written {}", Path::new(".").join("commit_history.json").display());
+            Ok(())
+        }
+        "server" => run_server().await,
+        _ => {
+            eprintln!("\n\n         Git History \nUsage: cargo run --release [COMMAND] <args> \nIndex Code: cargo run --release index <path_to_repo> \nRun Server: cargo run --release server\n");
+            Ok(())
+        }
+    }
 }
 
-fn git_index(repo_path: &str) -> Result<(), CustomError> {
+
+async fn run_server() -> Result<(), CustomError> {
+    let make_svc =
+        make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle_request)) });
+
+    let addr = ([0, 0, 0, 0], 8080).into();
+    let server = Server::bind(&addr).serve(make_svc);
+
+    println!("Server running on http://127.0.0.1:8080");
+
+    server
+        .await
+        .map_err(|e| CustomError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))
+}
+
+async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    let response = match (req.method(), req.uri().path()) {
+        (&Method::POST, "/git_history") => {
+            let full_body = hyper::body::to_bytes(req.into_body()).await.unwrap();
+            let parsed_body: serde_json::Value = serde_json::from_slice(&full_body).unwrap();
+            if let Some(repo_url) = parsed_body["repo_url"].as_str() {
+                match process_git_repo(repo_url).await {
+                    Ok(json_response) => Response::new(Body::from(json_response)),
+                    Err(e) => {
+                        let error_message = format!("Error: {}", e);
+                        Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Body::from(error_message))
+                            .unwrap()
+                    }
+                }
+            } else {
+                Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Missing field: repo_url"))
+                    .unwrap()
+            }
+        }
+        _ => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"))
+            .unwrap(),
+    };
+
+    Ok(response)
+}
+
+async fn process_git_repo(repo_url: &str) -> Result<String, CustomError> {
+    let temp_dir = tempdir().map_err(|e| {
+        eprintln!("Failed to create temporary directory: {}", e);
+        CustomError::IoError(e)
+    })?;
+    let clone_dir = temp_dir.path().join("repo");
+
+    let status = Command::new("git")
+        .arg("clone")
+        .arg(format!("https://{}", repo_url))
+        .arg(&clone_dir)
+        .status()
+        .map_err(|e| {
+            eprintln!("Failed to run git command: {}", e);
+            CustomError::IoError(e)
+        })?;
+
+    if !status.success() {
+        return Err(CustomError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to clone repository: {}", repo_url),
+        )));
+    }
+
+    let json_data = git_index(clone_dir.to_str().unwrap()).map_err(|e| {
+        eprintln!("Failed to index git repository: {}", e);
+        e
+    })?;
+
+    // Delete the temporary directory
+    temp_dir.close().map_err(|e| {
+        eprintln!("Failed to delete temporary directory: {}", e);
+        CustomError::IoError(e)
+    })?;
+
+    Ok(json_data)
+}
+
+fn git_index(repo_path: &str) -> Result<String, CustomError> {
     let repo = Repository::open(Path::new(repo_path))?;
 
     // Get the HEAD commit
@@ -105,12 +222,13 @@ fn git_index(repo_path: &str) -> Result<(), CustomError> {
     }
 
     // Serialize the commit history to JSON
-    let json_output = serde_json::to_string_pretty(&commit_history)?;
+    let json_output = serde_json::to_string_pretty(&commit_history).map_err(|e| {
+        eprintln!("Failed to serialize commit history to JSON: {}", e);
+        CustomError::JsonError(e)
+    })?;
     println!("Completed");
 
-    fs::write("commit_history.json", json_output)?;
-
-    Ok(())
+    Ok(json_output)
 }
 
 fn extract_pl_and_issue_id(commit_message: &str) -> String {

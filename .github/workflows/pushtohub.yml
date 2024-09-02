@@ -1,0 +1,32 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pushToHub:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to Docker Hub using PAT
+        run: echo "${{ secrets.DOCKER_PAT }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Get version from Cargo.toml
+        id: cargo
+        run: |
+          echo "::set-output name=version::$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "git-history") | .version')"
+        shell: bash
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/git-history:${{ steps.cargo.outputs.version }} -f dockerfile.public .
+          docker push ${{ secrets.DOCKER_USERNAME }}/git-history:${{ steps.cargo.outputs.version }}

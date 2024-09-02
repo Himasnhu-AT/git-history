@@ -1,7 +1,6 @@
-use git2::{DiffOptions, Error, Repository};
+use git2::{DiffOptions, Repository};
 use regex::Regex;
 use serde::Serialize;
-use serde_json::{json, Value};
 use std::fmt;
 use std::fs;
 use std::path::Path;

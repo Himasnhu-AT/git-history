@@ -16,6 +16,7 @@
 >     ...
 >   ]
 > }
+> ```
 >
 > To run script, use following command:
 > ```bash

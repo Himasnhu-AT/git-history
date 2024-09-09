@@ -2,6 +2,32 @@
 
 `Git-History` is a tool that generates a JSON representation of the Git history for a repository. You can use it either as a command-line tool or as a server providing an API.
 
+> [!IMPORTANT]
+> Updated script, now it will also provide following json from pr:
+> ```json
+> {
+>   "prompt": "issue: <PR Title> | description: <PR Description>",
+>   "completion": [
+>     {
+>       "file": "<Filename>",
+>       "git_diff": "<Git Diff>",
+>       "file_content": "<Full File Content>"
+>     },
+>     ...
+>   ]
+> }
+>
+> To run script, use following command:
+> ```bash
+> python3 fetch_pr.py
+> ```
+>
+> Ensure to complete the following steps before running the script:
+> 1. Create a `.env` file in the root directory of the project, and add `GITHUB_TOKEN`
+> 2. Update the `owner` and `repo` name in the `fetch_pr.py` file, at line `102` and `103`
+
+
+
 ## Table of Contents
 
 - [Usage](#usage)

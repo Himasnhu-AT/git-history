@@ -82,15 +82,14 @@ async fn main() -> Result<(), CustomError> {
             }
             let repo_path = &args[2];
             let json_data = git_index(repo_path)?;
-            fs::write(
-                Path::new(".").join("commit_history.json"),
-                json_data,
-            )
-            .map_err(|e| {
+            fs::write(Path::new(".").join("commit_history.json"), json_data).map_err(|e| {
                 eprintln!("Failed to write commit history to file: {}", e);
                 CustomError::IoError(e)
             })?;
-            println!("Commit history written {}", Path::new(".").join("commit_history.json").display());
+            println!(
+                "Commit history written {}",
+                Path::new(".").join("commit_history.json").display()
+            );
             Ok(())
         }
         "server" => run_server().await,
@@ -100,7 +99,6 @@ async fn main() -> Result<(), CustomError> {
         }
     }
 }
-
 
 async fn run_server() -> Result<(), CustomError> {
     let make_svc =
@@ -294,3 +292,103 @@ fn get_commit_diff(
 
     Ok(diffs)
 }
+
+// use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+// use reqwest::Client;
+// use serde::Deserialize;
+// use tokio;
+// use std::fs::File;
+// use std::io::{self, Write};
+// use std::io::BufRead;
+
+// #[derive(Deserialize, Debug)]
+// struct PullRequest {
+//     number: u32,
+//     title: Option<String>,
+//     body: Option<String>,
+//     head: Option<Head>,
+// }
+
+// #[derive(Deserialize, Debug)]
+// struct Head {
+//     sha: Option<String>,
+// }
+
+// async fn get_pull_request_details(owner: &str, repo: &str, pr_number: u32) -> Result<PullRequest, Box<dyn std::error::Error>> {
+//     let client = Client::new();
+//     let mut headers = HeaderMap::new();
+//     headers.insert(USER_AGENT, HeaderValue::from_static("reqwest"));
+
+//     let url = format!("https://api.github.com/repos/{}/{}/pulls/{}", owner, repo, pr_number);
+//     let response = client.get(&url).headers(headers).send().await?;
+//     let text = response.text().await?;
+
+//     // Log the raw JSON response for debugging
+//     println!("Raw JSON response for PR {}: {}", pr_number, text);
+
+//     let pr: PullRequest = serde_json::from_str(&text)?;
+//     Ok(pr)
+// }
+
+// async fn fetch_all_pull_requests(owner: &str, repo: &str) -> Result<Vec<PullRequest>, Box<dyn std::error::Error>> {
+//     let client = Client::new();
+//     let mut headers = HeaderMap::new();
+//     headers.insert(USER_AGENT, HeaderValue::from_static("reqwest"));
+
+//     let mut page = 1;
+//     const PER_PAGE: u32 = 100;
+//     let mut all_pull_requests = Vec::new();
+
+//     loop {
+//         println!("Fetching page {}", page);
+//         let url = format!(
+//             "https://api.github.com/repos/{}/{}/pulls?state=closed&per_page={}&page={}",
+//             owner, repo, PER_PAGE, page
+//         );
+
+//         // Print the raw response for debugging
+//         let raw_response = client.get(&url).headers(headers.clone()).send().await?;
+//         let text = raw_response.text().await?;
+//         println!("Response from page {}: {}", page, text);
+
+//         // Attempt to parse the response
+//         match serde_json::from_str::<Vec<PullRequest>>(&text) {
+//             Ok(response) => {
+//                 if response.is_empty() {
+//                     break;
+//                 }
+//                 all_pull_requests.extend(response);
+//                 page += 1;
+//             },
+//             Err(e) => {
+//                 eprintln!("Failed to parse JSON: {:?}", e);
+//                 break;
+//             }
+//         }
+//     }
+
+//     // Write all PR numbers to a file after fetching all pages
+//     let mut file = File::create("prs.txt")?;
+//     for pr in &all_pull_requests {
+//         writeln!(file, "{}", pr.number)?;
+//     }
+
+//     Ok(all_pull_requests)
+// }
+
+// #[tokio::main]
+// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//     let owner = "facebook";
+//     let repo = "react";
+
+//     let file = File::open("prs.txt")?;
+//     let reader = io::BufReader::new(file);
+
+//     for line in reader.lines() {
+//         let pr_number: u32 = line?.parse()?;
+//         let pr = get_pull_request_details(owner, repo, pr_number).await?;
+//         println!("{:?}", pr);
+//     }
+
+//     Ok(())
+// }
